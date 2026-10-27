@@ -66,3 +66,15 @@ class ReplayError(TaskError):
 
 class ScopeViolationError(TaskError):
     code = "SCOPE_VIOLATION"
+
+
+class IsolationError(TaskError):
+    code = "ISOLATION_VIOLATION"
+
+
+class CapabilityError(IsolationError):
+    code = "CAPABILITY_REJECTED"
+
+
+class EgressError(TaskError):
+    code = "EGRESS_BLOCKED"

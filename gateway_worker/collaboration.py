@@ -14,14 +14,23 @@ import hmac
 import json
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from .errors import (
+    EgressError,
     GatewayError,
     InvalidTransitionError,
+    IsolationError,
     ReplayError,
     ScopeViolationError,
     TaskError,
+)
+from .isolation import (
+    EgressDecision,
+    EgressStatus,
+    RestrictedWorkspace,
+    TaskTemplate,
+    TemplateRegistry,
 )
 
 
@@ -286,11 +295,15 @@ class FakeDesktopAdapter:
         worker_epoch: int,
         conversation_id: str | None = None,
         journal: ProtocolJournal | None = None,
+        workspace: RestrictedWorkspace | None = None,
+        template_registry: TemplateRegistry | None = None,
     ) -> None:
         self.worker_id = worker_id
         self.worker_epoch = worker_epoch
         self.conversation_id = conversation_id or f"collaboration:{worker_id}"
         self.journal = journal or ProtocolJournal()
+        self.workspace = workspace
+        self.template_registry = template_registry
         self.execution_count = 0
         self._status: dict[str, str] = {}
         self._commands: dict[str, Command] = {}
@@ -314,6 +327,7 @@ class FakeDesktopAdapter:
         self._status[command.command_id] = "injected"
 
     def execute(self, command: Command, *, summary: str | None = None) -> ExecutionEvidence:
+        self._authorize_command(command)
         command = self.prepare(command)
         previous = self._evidence.get(command.command_id)
         if previous is not None:
@@ -349,6 +363,22 @@ class FakeDesktopAdapter:
         self.execution_count += 1
         return evidence
 
+    def _authorize_command(self, command: Command) -> None:
+        if self.workspace is None:
+            return
+        intent = dict(command.intent)
+        template = None
+        if self.template_registry is not None:
+            template = self.template_registry.resolve(intent.get("template_id", ""), intent.get("template_version", "1"))
+        self.workspace.authorize_request(
+            template=template,
+            target_conversation=command.target_conversation,
+            tools=intent.get("tools", ()),
+            resources=intent.get("resources", ()),
+            output_fields=intent.get("output_fields", ()),
+            prompt=intent.get("prompt"),
+        )
+
     def reconcile(self, command_id: str) -> UIReconciliation:
         command = self._commands.get(command_id)
         if command is None:
@@ -371,6 +401,13 @@ class FakeDesktopAdapter:
 
     def evidence_for(self, command_id: str) -> ExecutionEvidence | None:
         return self._evidence.get(command_id)
+
+    def use_fallback_capability(self, capability: str) -> dict[str, Any]:
+        if self.workspace is None:
+            raise IsolationError("Desktop fallback capabilities require a RestrictedWorkspace")
+        return self.workspace.use_capability(capability)
+
+    use_capability = use_fallback_capability
 
 
 class FakeWorker:
@@ -451,10 +488,14 @@ class FakeCollaboration:
         *,
         journal: ProtocolJournal | None = None,
         adapters: Mapping[str, FakeDesktopAdapter] | None = None,
+        template_registry: TemplateRegistry | None = None,
+        workspaces: Mapping[str, RestrictedWorkspace] | None = None,
     ) -> None:
         self.gateway = gateway
         self.journal = journal or ProtocolJournal()
         self.adapters: dict[str, FakeDesktopAdapter] = dict(adapters or {})
+        self.template_registry = template_registry
+        self.workspaces: dict[str, RestrictedWorkspace] = dict(workspaces or {})
         self.events: list[TaskEvent] = []
         self.monitoring_events: list[MonitoringEvent] = []
         self._credentials: dict[str, tuple[str, int, str, str]] = {}
@@ -467,17 +508,83 @@ class FakeCollaboration:
     def _adapter(self, agent_id: str, worker_id: str, worker_epoch: int) -> FakeDesktopAdapter:
         adapter = self.adapters.get(agent_id)
         if adapter is None:
-            adapter = FakeDesktopAdapter(worker_id=worker_id, worker_epoch=worker_epoch, journal=self.journal)
+            adapter = FakeDesktopAdapter(
+                worker_id=worker_id,
+                worker_epoch=worker_epoch,
+                journal=self.journal,
+                workspace=self.workspaces.get(agent_id),
+                template_registry=self.template_registry,
+            )
             self.adapters[agent_id] = adapter
+        elif adapter.workspace is None and agent_id in self.workspaces:
+            adapter.workspace = self.workspaces[agent_id]
+            adapter.template_registry = self.template_registry
         return adapter
 
+    @staticmethod
+    def _scope_values(scope: Any, *names: str) -> list[str]:
+        if not isinstance(scope, Mapping):
+            return []
+        for name in names:
+            value = scope.get(name)
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, (list, tuple, set, frozenset)):
+                return [str(item) for item in value]
+        return []
+
+    def _template_for_task(self, task: Any) -> TaskTemplate | None:
+        if self.template_registry is None:
+            return None
+        return self.template_registry.resolve(task.template_id, task.template_version)
+
+    def _workspace_for_task(self, task: Any, *, worker_id: str, worker_epoch: int) -> RestrictedWorkspace:
+        existing = self.workspaces.get(task.recipient_agent_id)
+        if existing is not None:
+            return existing
+        template = self._template_for_task(task)
+        scope = self._scope(task)
+        workspace = RestrictedWorkspace(
+            workspace_id=f"workspace:{task.recipient_agent_id}",
+            collaboration_conversation=f"collaboration:{worker_id}",
+            allowed_tools=(template.allowed_tools if template is not None else self._scope_values(scope, "tools", "allowed_tools")),
+            allowed_resources=(template.allowed_resources if template is not None else self._scope_values(scope, "resources", "allowed_resources")),
+        )
+        self.workspaces[task.recipient_agent_id] = workspace
+        return workspace
+
     def submit_task(self, **kwargs: Any) -> Any:
+        raw_template = kwargs.get("template")
+        if isinstance(raw_template, TaskTemplate):
+            if self.template_registry is None:
+                self.template_registry = TemplateRegistry([raw_template])
+            kwargs["template"] = {"id": raw_template.template_id, "version": raw_template.version}
+        if self.template_registry is not None:
+            template_id = kwargs.get("template_id")
+            template_version = kwargs.get("template_version")
+            if isinstance(raw_template, Mapping):
+                template_id = raw_template.get("id", template_id)
+                template_version = raw_template.get("version", template_version)
+            template = self.template_registry.resolve(str(template_id), str(template_version))
+            scope = kwargs.get("scope") or {}
+            requested_tools = set(self._scope_values(scope, "tools", "allowed_tools"))
+            requested_resources = set(self._scope_values(scope, "resources", "allowed_resources"))
+            if requested_tools - template.allowed_tools or requested_resources - template.allowed_resources:
+                raise IsolationError("Task scope requests tools or resources outside the approved template")
+            requested_outputs = set(self._scope_values(scope, "output_fields"))
+            if requested_outputs - template.output_fields:
+                raise IsolationError("Task scope requests output fields outside the approved template")
+            requested_rounds = (kwargs.get("scope") or {}).get("max_rounds") if isinstance(kwargs.get("scope") or {}, Mapping) else None
+            if requested_rounds is not None and int(requested_rounds) > template.max_rounds:
+                raise IsolationError("Task scope requests more rounds than the approved template")
         task = self.gateway.create_task(**kwargs)
         if not task.confirmation_nonce or not task.fencing_token or task.worker_id is None or task.worker_epoch is None:
             raise GatewayError("Gateway did not return the recipient lease capabilities")
         self._tasks[task.id] = task
         self._credentials[task.id] = (task.worker_id, task.worker_epoch, task.fencing_token, task.confirmation_nonce)
         self._rounds[task.id] = 0
+        if self.template_registry is not None:
+            self._workspace_for_task(task, worker_id=task.worker_id, worker_epoch=task.worker_epoch)
         self._adapter(task.recipient_agent_id, task.worker_id, task.worker_epoch)
         self._emit(task.id, "task.submitted", from_agent_id=task.sender_agent_id, to_agent_id=task.recipient_agent_id)
         return task
@@ -676,10 +783,23 @@ class FakeCollaboration:
 
     send_input = provide_input
 
-    def execute_round(self, task_id: str, *, round_number: int | None = None, event_id: str | None = None) -> ExecutionEvidence:
+    def execute_round(
+        self,
+        task_id: str,
+        *,
+        round_number: int | None = None,
+        event_id: str | None = None,
+        requested_tools: Iterable[str] | None = None,
+        requested_resources: Iterable[str] | None = None,
+        output_fields: Iterable[str] | None = None,
+        prompt: str | None = None,
+    ) -> ExecutionEvidence:
         task = self.current_task(task_id)
         round_number = round_number or max(1, self._rounds.get(task_id, 0) + 1)
-        max_rounds = int(self._scope(task).get("max_rounds", 2))
+        template = self._template_for_task(task)
+        max_rounds = int(self._scope(task).get("max_rounds", template.max_rounds if template is not None else 2))
+        if template is not None:
+            max_rounds = min(max_rounds, template.max_rounds)
         if round_number > max_rounds:
             raise ScopeViolationError("round exceeds the immutable Task scope")
         worker_id, epoch, _, _ = self._credential(task_id)
@@ -689,14 +809,31 @@ class FakeCollaboration:
             command_input = {**task.input_data, **self._inputs[task_id]}
         elif task_id in self._inputs:
             command_input = self._inputs[task_id]
+        scope_tools = list(requested_tools) if requested_tools is not None else self._scope_values(self._scope(task), "tools", "allowed_tools")
+        scope_resources = list(requested_resources) if requested_resources is not None else self._scope_values(self._scope(task), "resources", "allowed_resources")
+        scope_outputs = list(output_fields) if output_fields is not None else self._scope_values(self._scope(task), "output_fields")
         command = Command(
             command_id=f"{task_id}:round:{round_number}",
             task_id=task_id,
             target_conversation=adapter.conversation_id,
-            intent={"template_id": task.template_id, "template_version": task.template_version, "round": round_number, "input": command_input},
+            intent={
+                "template_id": task.template_id,
+                "template_version": task.template_version,
+                "round": round_number,
+                "input": command_input,
+                "tools": scope_tools,
+                "resources": scope_resources,
+                "output_fields": scope_outputs,
+                "prompt": prompt,
+            },
             worker_epoch=epoch,
         )
         event_key = event_id or command.command_id
+        try:
+            self._authorize_command(task, command, adapter)
+        except IsolationError as error:
+            self._record_isolation_failure(task, command, error, worker_id=worker_id, worker_epoch=epoch)
+            raise
         evidence, duplicate = self.journal.record(
             namespace="execution",
             task_id=task_id,
@@ -711,20 +848,149 @@ class FakeCollaboration:
             self._monitor("execution_evidence", task_id, worker_id=worker_id, round_number=round_number, details={"command_id": command.command_id, "result_hash": evidence.result_hash})
         return evidence
 
+    def _authorize_command(self, task: Any, command: Command, adapter: FakeDesktopAdapter) -> None:
+        workspace = self._workspace_for_task(task, worker_id=adapter.worker_id, worker_epoch=adapter.worker_epoch)
+        template = self._template_for_task(task)
+        intent = dict(command.intent)
+        workspace.authorize_request(
+            template=template,
+            target_conversation=command.target_conversation,
+            tools=intent.get("tools", ()),
+            resources=intent.get("resources", ()),
+            output_fields=intent.get("output_fields", ()),
+            prompt=intent.get("prompt"),
+        )
+
+    def _record_isolation_failure(
+        self,
+        task: Any,
+        command: Command,
+        error: IsolationError,
+        *,
+        worker_id: str,
+        worker_epoch: int,
+    ) -> None:
+        current = self.current_task(task.id)
+        if current.state == "RUNNING":
+            _, _, fencing, _ = self._credential(task.id)
+            self.gateway.transition_task(
+                task.id,
+                expected_state_version=current.state_version,
+                new_state="NEEDS_ATTENTION",
+                worker_id=worker_id,
+                worker_epoch=worker_epoch,
+                fencing_token=fencing,
+                reason="isolation_failure",
+            )
+        key = f"isolation-failure:{command.command_id}"
+        self._emit(
+            task.id,
+            "isolation.failure",
+            event_id=key,
+            from_agent_id=task.recipient_agent_id,
+            to_agent_id=task.sender_agent_id,
+            command_id=command.command_id,
+            payload={"code": error.code, "reason": str(error)},
+        )
+        self._monitor(
+            "isolation_failure",
+            task.id,
+            severity="error",
+            worker_id=worker_id,
+            round_number=int(command.intent.get("round", 0)),
+            details={"code": error.code, "reason": str(error), "command_id": command.command_id},
+        )
+
     def _execute_if_running(self, task_id: str, adapter: FakeDesktopAdapter, command: Command) -> ExecutionEvidence:
         if self.current_task(task_id).state != "RUNNING":
             raise InvalidTransitionError("execution requires a RUNNING Task")
         return adapter.execute(command)
 
-    def complete_task(self, task_id: str, *, evidence: ExecutionEvidence, summary: str | None = None, event_id: str | None = None) -> Any:
+    def _egress_policy(self, task: Any):
+        template = self._template_for_task(task)
+        return None if template is None else template.egress_policy
+
+    def egress_result(
+        self,
+        task_id: str,
+        result: Mapping[str, Any],
+        *,
+        recipient_role: str = "sender",
+        recipient_approved: bool = False,
+        approval_id: str | None = None,
+        event_id: str | None = None,
+    ) -> EgressDecision:
+        task = self.current_task(task_id)
+        policy = self._egress_policy(task)
+        if policy is None:
+            decision = EgressDecision(
+                task_id=task_id,
+                status=EgressStatus.DELIVERED,
+                delivered=dict(result),
+                withheld_fields=(),
+                recipient_agent_id=task.sender_agent_id or "",
+                recipient_role=recipient_role,
+                reason="no_template_policy_configured",
+                approval_id=approval_id,
+            )
+            return decision
+        key = event_id or f"egress:{_digest({'result': dict(result), 'role': recipient_role, 'approved': recipient_approved, 'approval_id': approval_id})}"
+        payload = {
+            "result": dict(result),
+            "recipient_role": recipient_role,
+            "recipient_approved": recipient_approved,
+            "approval_id": approval_id,
+        }
+        decision, duplicate = self.journal.record(
+            namespace="egress",
+            task_id=task_id,
+            key=key,
+            payload=payload,
+            create=lambda: policy.evaluate(
+                task_id=task_id,
+                result=result,
+                recipient_agent_id=task.sender_agent_id or "",
+                recipient_role=recipient_role,
+                recipient_approved=recipient_approved,
+                approval_id=approval_id,
+            ),
+        )
+        if not duplicate:
+            event_type = "result.egress" if decision.status.value == "delivered" else "result.egress_approval_required"
+            self._emit(task_id, event_type, event_id=key, from_agent_id=task.recipient_agent_id, to_agent_id=task.sender_agent_id, payload=decision.as_dict())
+        return decision
+
+    evaluate_result_egress = egress_result
+
+    def complete_task(
+        self,
+        task_id: str,
+        *,
+        evidence: ExecutionEvidence,
+        summary: str | None = None,
+        result_fields: Mapping[str, Any] | None = None,
+        recipient_approved: bool = False,
+        approval_id: str | None = None,
+        event_id: str | None = None,
+    ) -> Any:
         task = self.current_task(task_id)
         known = self._evidence.get(task_id, [])
         if evidence not in known:
             raise TaskError("completion requires evidence recorded for this Task")
         if evidence != known[-1] or evidence.task_id != task_id or evidence.template_id != task.template_id or evidence.template_version != str(task.template_version) or evidence.status != "verified":
             raise TaskError("execution evidence does not match the current Task authorization")
+        output = dict(result_fields) if result_fields is not None else {"summary": summary or evidence.summary}
+        egress = self.egress_result(
+            task_id,
+            output,
+            recipient_approved=recipient_approved,
+            approval_id=approval_id,
+            event_id=f"{event_id}:egress" if event_id else None,
+        )
+        if egress.status.value != "delivered":
+            raise EgressError(egress.reason)
         key = event_id or f"result:{evidence.command_id}"
-        payload = {"evidence": evidence.as_dict(), "summary": summary or evidence.summary}
+        payload = {"evidence": evidence.as_dict(), "summary": summary or evidence.summary, "egress": egress.as_dict()}
         worker_id, epoch, fencing, _ = self._credential(task_id)
 
         def perform() -> Any:
@@ -735,7 +1001,7 @@ class FakeCollaboration:
 
         result, duplicate = self.journal.record(namespace="result", task_id=task_id, key=key, payload=payload, create=perform)
         if not duplicate:
-            result_summary = ResultSummary(task_id, summary or evidence.summary, evidence, tuple(x for x in (task.sender_agent_id, task.recipient_agent_id) if x))
+            result_summary = ResultSummary(task_id, str(egress.delivered.get("summary", summary or evidence.summary)), evidence, tuple(x for x in (task.sender_agent_id, task.recipient_agent_id) if x))
             self._results[task_id] = result_summary
             self._emit(task_id, "result.completed", event_id=key, round_number=evidence.round_number, command_id=evidence.command_id, from_agent_id=task.recipient_agent_id, to_agent_id=task.sender_agent_id, payload=result_summary.as_dict())
             self._emit(task_id, "result.surfaced", event_id=f"{key}:recipient", round_number=evidence.round_number, command_id=evidence.command_id, from_agent_id=task.recipient_agent_id, to_agent_id=task.recipient_agent_id, payload={"summary": result_summary.summary, "task_id": task_id})

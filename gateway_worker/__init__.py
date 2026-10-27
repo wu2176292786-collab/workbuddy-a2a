@@ -21,6 +21,20 @@ from .collaboration import (
     TaskExecutionEvidence,
     UIReconciliation,
 )
+from .isolation import (
+    AuthorizationReceipt,
+    CapabilityGrant,
+    EgressDecision,
+    EgressPolicy,
+    EgressStatus,
+    ExecutionBoundary,
+    ExecutionIsolation,
+    IsolatedWorkspace,
+    RestrictedWorkspace,
+    ResultEgressPolicy,
+    TaskTemplate,
+    TemplateRegistry,
+)
 
 __all__ = [
     "Gateway",
@@ -43,4 +57,16 @@ __all__ = [
     "TaskEvent",
     "TaskExecutionEvidence",
     "UIReconciliation",
+    "AuthorizationReceipt",
+    "CapabilityGrant",
+    "EgressDecision",
+    "EgressPolicy",
+    "EgressStatus",
+    "ExecutionBoundary",
+    "ExecutionIsolation",
+    "IsolatedWorkspace",
+    "RestrictedWorkspace",
+    "ResultEgressPolicy",
+    "TaskTemplate",
+    "TemplateRegistry",
 ]

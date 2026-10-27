@@ -31,6 +31,11 @@ scope-bounded `NEEDS_INPUT`, command journaling and UI reconciliation,
 template-defined execution evidence, result summaries, and replay-safe
 monitoring events without opening a real WorkBuddy session.
 
+Execution isolation is provided by `gateway_worker.isolation`: versioned
+`TaskTemplate` allowlists, a dedicated `RestrictedWorkspace`, explicit
+screenshot/OCR and clipboard grants, and a machine-enforced
+`ResultEgressPolicy` for sensitive output fields.
+
 The bootstrap CLI creates the initial Team, User, and Agent. Generate a one-time pairing code with the returned IDs:
 
 ```sh
