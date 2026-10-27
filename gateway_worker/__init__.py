@@ -35,6 +35,18 @@ from .isolation import (
     TaskTemplate,
     TemplateRegistry,
 )
+from .windows_adapter import (
+    AdapterErrorEvent,
+    FakeWindowsUIAutomationBackend,
+    InstallationReport,
+    UIAutomationBackend,
+    WindowsCommandJournal,
+    WindowsCompatibilityProfile,
+    WindowsDesktopAdapter,
+    WindowsAdapterError,
+    WindowsUIAutomationError,
+    WindowsUIAutomationAdapter,
+)
 
 __all__ = [
     "Gateway",
@@ -69,4 +81,14 @@ __all__ = [
     "ResultEgressPolicy",
     "TaskTemplate",
     "TemplateRegistry",
+    "AdapterErrorEvent",
+    "FakeWindowsUIAutomationBackend",
+    "InstallationReport",
+    "UIAutomationBackend",
+    "WindowsCommandJournal",
+    "WindowsCompatibilityProfile",
+    "WindowsDesktopAdapter",
+    "WindowsAdapterError",
+    "WindowsUIAutomationError",
+    "WindowsUIAutomationAdapter",
 ]

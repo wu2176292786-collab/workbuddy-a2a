@@ -78,3 +78,31 @@ class CapabilityError(IsolationError):
 
 class EgressError(TaskError):
     code = "EGRESS_BLOCKED"
+
+
+class DesktopAdapterError(IsolationError):
+    code = "DESKTOP_ADAPTER_ERROR"
+
+
+class AutomationPermissionError(DesktopAdapterError):
+    code = "AUTOMATION_PERMISSION_REQUIRED"
+
+
+class UnsupportedAppVersionError(DesktopAdapterError):
+    code = "UNSUPPORTED_APP_VERSION"
+
+
+class UIStateError(DesktopAdapterError):
+    code = "UNEXPECTED_UI_STATE"
+
+
+class NeedsAttentionError(DesktopAdapterError):
+    code = "NEEDS_ATTENTION"
+
+
+class ControlNotFoundError(UIStateError):
+    code = "UI_CONTROL_NOT_FOUND"
+
+
+class HumanInterferenceError(NeedsAttentionError):
+    code = "HUMAN_INTERFERENCE"

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping
 
 from .errors import (
+    DesktopAdapterError,
     EgressError,
     GatewayError,
     InvalidTransitionError,
@@ -834,13 +835,17 @@ class FakeCollaboration:
         except IsolationError as error:
             self._record_isolation_failure(task, command, error, worker_id=worker_id, worker_epoch=epoch)
             raise
-        evidence, duplicate = self.journal.record(
-            namespace="execution",
-            task_id=task_id,
-            key=event_key,
-            payload=command.as_dict(),
-            create=lambda: self._execute_if_running(task_id, adapter, command),
-        )
+        try:
+            evidence, duplicate = self.journal.record(
+                namespace="execution",
+                task_id=task_id,
+                key=event_key,
+                payload=command.as_dict(),
+                create=lambda: self._execute_if_running(task_id, adapter, command),
+            )
+        except DesktopAdapterError as error:
+            self._record_isolation_failure(task, command, error, worker_id=worker_id, worker_epoch=epoch)
+            raise
         if not duplicate:
             self._evidence.setdefault(task_id, []).append(evidence)
             self._rounds[task_id] = max(self._rounds.get(task_id, 0), round_number)
