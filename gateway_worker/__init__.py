@@ -47,6 +47,15 @@ from .windows_adapter import (
     WindowsUIAutomationError,
     WindowsUIAutomationAdapter,
 )
+from .macos_adapter import (
+    FakeMacOSAccessibilityBackend,
+    MacDesktopAdapter,
+    MacOSAccessibilityAdapter,
+    MacOSAccessibilityBackend,
+    MacOSCommandJournal,
+    MacOSCompatibilityProfile,
+    MacOSDesktopAdapter,
+)
 
 __all__ = [
     "Gateway",
@@ -91,4 +100,11 @@ __all__ = [
     "WindowsAdapterError",
     "WindowsUIAutomationError",
     "WindowsUIAutomationAdapter",
+    "FakeMacOSAccessibilityBackend",
+    "MacDesktopAdapter",
+    "MacOSAccessibilityAdapter",
+    "MacOSAccessibilityBackend",
+    "MacOSCommandJournal",
+    "MacOSCompatibilityProfile",
+    "MacOSDesktopAdapter",
 ]

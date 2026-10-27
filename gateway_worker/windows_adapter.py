@@ -229,6 +229,9 @@ def _evidence_from_dict(value: Mapping[str, Any]) -> ExecutionEvidence:
 class WindowsDesktopAdapter(FakeDesktopAdapter):
     """Windows UIA adapter with a deterministic backend seam."""
 
+    permission_error_type = AutomationPermissionError
+    permission_name = "Windows UI Automation"
+
     def __init__(
         self,
         *,
@@ -273,10 +276,12 @@ class WindowsDesktopAdapter(FakeDesktopAdapter):
     def verify_installation(self) -> InstallationReport:
         permission_value = getattr(self.backend, "automation_permission_granted", None)
         if permission_value is None:
-            permission_value = getattr(self.backend, "automation_permission", False)
+            permission_value = getattr(self.backend, "automation_permission", None)
+        if permission_value is None:
+            permission_value = getattr(self.backend, "accessibility_permission_granted", False)
         permission = bool(permission_value() if callable(permission_value) else permission_value)
         if not permission:
-            self._fail(AutomationPermissionError, "Windows UI Automation permission is required", phase="permission")
+            self._fail(self.permission_error_type, f"{self.permission_name} permission is required", phase="permission")
         app_id = str(self._backend_value("app_id", ""))
         if app_id != self.profile.app_id:
             self._fail(UIStateError, "the running app is not the supported WorkBuddy App", phase="app_identity", details={"app_id": app_id})

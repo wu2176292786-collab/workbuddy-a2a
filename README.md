@@ -41,6 +41,11 @@ The Windows adapter contract is exposed by
 UI Automation backend, a file-backed command journal, dedicated conversation
 checks, structured UI error events, and reconnect reconciliation.
 
+The macOS counterpart is exposed by
+`gateway_worker.macos_adapter.MacOSDesktopAdapter` with the same journal,
+reconciliation, completion-evidence, safe-stop, and capability-gated
+clipboard contract over an Accessibility backend.
+
 The bootstrap CLI creates the initial Team, User, and Agent. Generate a one-time pairing code with the returned IDs:
 
 ```sh

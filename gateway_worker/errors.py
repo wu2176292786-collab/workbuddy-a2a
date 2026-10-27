@@ -88,6 +88,10 @@ class AutomationPermissionError(DesktopAdapterError):
     code = "AUTOMATION_PERMISSION_REQUIRED"
 
 
+class AccessibilityPermissionError(DesktopAdapterError):
+    code = "ACCESSIBILITY_PERMISSION_REQUIRED"
+
+
 class UnsupportedAppVersionError(DesktopAdapterError):
     code = "UNSUPPORTED_APP_VERSION"
 
