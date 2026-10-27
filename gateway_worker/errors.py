@@ -58,3 +58,11 @@ class FencingError(TaskError):
 
 class TaskExpired(TaskError):
     code = "TASK_EXPIRED"
+
+
+class ReplayError(TaskError):
+    code = "REPLAY_REJECTED"
+
+
+class ScopeViolationError(TaskError):
+    code = "SCOPE_VIOLATION"

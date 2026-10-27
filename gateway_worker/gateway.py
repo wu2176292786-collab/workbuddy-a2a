@@ -252,6 +252,12 @@ class Gateway:
     def expire_task(self, task_id: str, *, expected_state_version: int) -> TaskRecord:
         return self.store.expire_task(task_id, expected_state_version=expected_state_version)
 
+    def fake_collaboration(self, **kwargs: Any) -> Any:
+        """Create the deterministic Gateway–Worker contract harness."""
+        from .collaboration import FakeCollaboration
+
+        return FakeCollaboration(self, **kwargs)
+
     async def start(self, *, host: str = "127.0.0.1", port: int = 8765, ssl_context: Any = None) -> None:
         if self._runner is not None:
             raise RuntimeError("Gateway is already running")

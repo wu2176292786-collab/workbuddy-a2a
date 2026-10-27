@@ -25,6 +25,12 @@ Install the package and its runtime dependencies with `python3 -m pip install -e
 python3 -m unittest discover -v
 ```
 
+The deterministic Gateway–Worker collaboration contract is available through
+`gateway_worker.collaboration.FakeCollaboration`. It covers two-round delivery,
+scope-bounded `NEEDS_INPUT`, command journaling and UI reconciliation,
+template-defined execution evidence, result summaries, and replay-safe
+monitoring events without opening a real WorkBuddy session.
+
 The bootstrap CLI creates the initial Team, User, and Agent. Generate a one-time pairing code with the returned IDs:
 
 ```sh
