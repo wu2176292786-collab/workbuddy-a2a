@@ -22,7 +22,7 @@ The current material describes a controlled demonstration. Real WorkBuddy accoun
 Install the package and its runtime dependencies with `python3 -m pip install -e .`, then run the Gateway/Worker pairing contract suite:
 
 ```sh
-python3 -m unittest -v tests.test_pairing
+python3 -m unittest discover -v
 ```
 
 The bootstrap CLI creates the initial Team, User, and Agent. Generate a one-time pairing code with the returned IDs:

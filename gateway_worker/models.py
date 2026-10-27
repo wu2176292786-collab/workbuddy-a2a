@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -63,3 +64,19 @@ class TaskRecord:
     payload: str
     state: str
     created_at: float
+    team_id: str | None = None
+    sender_agent_id: str | None = None
+    template_id: str | None = None
+    template_version: str | None = None
+    input_data: Any = None
+    scope: Any = None
+    permissions: Any = None
+    expires_at: float | None = None
+    task_hash: str | None = None
+    confirmation_nonce: str | None = None
+    state_version: int = 0
+    worker_id: str | None = None
+    worker_epoch: int | None = None
+    fencing_token: str | None = None
+    lease_expires_at: float | None = None
+    updated_at: float | None = None

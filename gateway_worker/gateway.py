@@ -75,6 +75,51 @@ class Gateway:
     ) -> PairingCode:
         return self.store.create_pairing_code(team_id, agent_id, ttl_seconds, max_attempts)
 
+    def create_task(
+        self,
+        *,
+        sender_agent_id: str,
+        recipient_agent_id: str,
+        template_id: str | None = None,
+        template_version: str | int | None = None,
+        template: Any = None,
+        input_data: Any = None,
+        input: Any = None,
+        scope: Any = None,
+        permissions: Any = None,
+        expires_at: Any = None,
+        team_id: str | None = None,
+        lease_ttl_seconds: int = 60,
+    ) -> TaskRecord:
+        sender = self.store.get_agent(sender_agent_id)
+        if sender is None:
+            raise ValidationError("sender Agent does not exist")
+        if template is not None:
+            if not isinstance(template, dict) or "id" not in template or "version" not in template:
+                raise ValidationError("template must contain id and version")
+            template_id = template["id"]
+            template_version = template["version"]
+        if input_data is None and input is not None:
+            input_data = input
+        if scope is None:
+            scope = {}
+        if permissions is None:
+            permissions = []
+        if expires_at is None:
+            expires_at = time.time() + 24 * 60 * 60
+        return self.store.create_authorized_task(
+            team_id=team_id or sender.team_id,
+            sender_agent_id=sender_agent_id,
+            recipient_agent_id=recipient_agent_id,
+            template_id=template_id,
+            template_version=template_version,
+            input_data=input_data,
+            scope=scope,
+            permissions=permissions,
+            expires_at=expires_at,
+            lease_ttl_seconds=lease_ttl_seconds,
+        )
+
     def pair_worker(
         self,
         *,
@@ -124,7 +169,88 @@ class Gateway:
         )
 
     def submit_task(self, recipient_agent_id: str, payload: str) -> TaskRecord:
-        return self.store.create_task(recipient_agent_id, payload)
+        return self.store.create_legacy_task(recipient_agent_id, payload)
+
+    def get_task(self, task_id: str) -> TaskRecord | None:
+        return self.store.get_task(task_id)
+
+    def confirm_task(
+        self,
+        task_id: str,
+        *,
+        confirmation_expires_at: Any = None,
+        expires_at: Any = None,
+        **kwargs: Any,
+    ) -> TaskRecord:
+        if confirmation_expires_at is None:
+            confirmation_expires_at = expires_at
+        if confirmation_expires_at is None:
+            raise ValidationError("confirmation expiry is required")
+        kwargs["confirmation_expires_at"] = confirmation_expires_at
+        return self.store.confirm_task(task_id, **kwargs)
+
+    def update_task_authorization(self, task_id: str, **kwargs: Any) -> TaskRecord:
+        return self.store.update_task_authorization(task_id, **kwargs)
+
+    def transition_task(self, task_id: str, **kwargs: Any) -> TaskRecord:
+        return self.store.transition_task(task_id, **kwargs)
+
+    def start_task(self, task_id: str, *, expected_state_version: int, worker_id: str, worker_epoch: int, fencing_token: str) -> TaskRecord:
+        return self.transition_task(
+            task_id,
+            expected_state_version=expected_state_version,
+            new_state="RUNNING",
+            worker_id=worker_id,
+            worker_epoch=worker_epoch,
+            fencing_token=fencing_token,
+        )
+
+    def complete_task(self, task_id: str, *, expected_state_version: int, worker_id: str, worker_epoch: int, fencing_token: str, result: Any = None) -> TaskRecord:
+        return self.transition_task(
+            task_id,
+            expected_state_version=expected_state_version,
+            new_state="COMPLETED",
+            worker_id=worker_id,
+            worker_epoch=worker_epoch,
+            fencing_token=fencing_token,
+            reason="completed",
+        )
+
+    def fail_task(self, task_id: str, *, expected_state_version: int, worker_id: str, worker_epoch: int, fencing_token: str, result: Any = None) -> TaskRecord:
+        return self.transition_task(
+            task_id,
+            expected_state_version=expected_state_version,
+            new_state="FAILED",
+            worker_id=worker_id,
+            worker_epoch=worker_epoch,
+            fencing_token=fencing_token,
+            reason="failed",
+        )
+
+    def request_cancellation(self, task_id: str, *, expected_state_version: int, worker_id: str, worker_epoch: int, fencing_token: str) -> TaskRecord:
+        return self.transition_task(
+            task_id,
+            expected_state_version=expected_state_version,
+            new_state="CANCEL_REQUESTED",
+            worker_id=worker_id,
+            worker_epoch=worker_epoch,
+            fencing_token=fencing_token,
+            reason="cancellation_requested",
+        )
+
+    def cancel_task(self, task_id: str, *, expected_state_version: int, worker_id: str, worker_epoch: int, fencing_token: str) -> TaskRecord:
+        return self.transition_task(
+            task_id,
+            expected_state_version=expected_state_version,
+            new_state="CANCELLED",
+            worker_id=worker_id,
+            worker_epoch=worker_epoch,
+            fencing_token=fencing_token,
+            reason="cancelled_at_safe_stop",
+        )
+
+    def expire_task(self, task_id: str, *, expected_state_version: int) -> TaskRecord:
+        return self.store.expire_task(task_id, expected_state_version=expected_state_version)
 
     async def start(self, *, host: str = "127.0.0.1", port: int = 8765, ssl_context: Any = None) -> None:
         if self._runner is not None:
@@ -227,7 +353,22 @@ class Gateway:
     async def _http_task(self, request: web.Request) -> web.Response:
         try:
             body = await request.json()
-            task = self.submit_task(body["recipient_agent_id"], body["payload"])
+            if "sender_agent_id" in body and ("template_id" in body or "template" in body):
+                task = self.create_task(
+                    team_id=body.get("team_id"),
+                    sender_agent_id=body["sender_agent_id"],
+                    recipient_agent_id=body["recipient_agent_id"],
+                    template_id=body.get("template_id"),
+                    template_version=body.get("template_version"),
+                    template=body.get("template"),
+                    input_data=body.get("input_data", body.get("input")),
+                    scope=body.get("scope", {}),
+                    permissions=body.get("permissions", []),
+                    expires_at=body.get("expires_at"),
+                    lease_ttl_seconds=body.get("lease_ttl_seconds", 60),
+                )
+            else:
+                task = self.submit_task(body["recipient_agent_id"], body["payload"])
             return web.json_response({"task_id": task.id, "state": task.state}, status=201)
         except (KeyError, GatewayError, ValueError) as error:
             return web.json_response({"error": getattr(error, "code", "INVALID_REQUEST"), "message": str(error)}, status=409)

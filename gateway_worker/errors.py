@@ -30,3 +30,31 @@ class NoActiveWorker(GatewayError):
 
 class WorkerError(GatewayError):
     code = "WORKER_CONNECTION_ERROR"
+
+
+class TaskError(GatewayError):
+    code = "TASK_ERROR"
+
+
+class ConfirmationError(TaskError):
+    code = "CONFIRMATION_REJECTED"
+
+
+class StateConflictError(TaskError):
+    code = "STATE_CONFLICT"
+
+
+class InvalidTransitionError(TaskError):
+    code = "INVALID_TRANSITION"
+
+
+class TerminalTaskError(TaskError):
+    code = "TASK_TERMINAL"
+
+
+class FencingError(TaskError):
+    code = "FENCING_REJECTED"
+
+
+class TaskExpired(TaskError):
+    code = "TASK_EXPIRED"

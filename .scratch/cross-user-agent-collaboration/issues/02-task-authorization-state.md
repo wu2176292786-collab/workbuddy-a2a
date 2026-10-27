@@ -6,9 +6,11 @@
 
 **Status:** ready-for-agent
 
-- [ ] Task template、scope、permission、expiry 和输入可规范化并生成稳定 `task_hash`
-- [ ] 确认 envelope 绑定 `task_id`、`task_hash`、一次性 nonce、expiry 和认证接收方身份
-- [ ] 输入、template、permission、recipient、scope 或 expiry 变化会使旧确认失效
-- [ ] Gateway 是唯一状态权威，状态迁移使用 expected `state_version` 和 CAS
-- [ ] 终态包括 `REJECTED`、`COMPLETED`、`FAILED`、`CANCELLED` 和 `EXPIRED`，迟到事件不会重新打开 Task
-- [ ] 每个 Task lease 校验 `worker_id`、`worker_epoch` 和 fencing token
+- [x] Task template、scope、permission、expiry 和输入可规范化并生成稳定 `task_hash`
+- [x] 确认 envelope 绑定 `task_id`、`task_hash`、一次性 nonce、expiry 和认证接收方身份
+- [x] 输入、template、permission、recipient、scope 或 expiry 变化会使旧确认失效
+- [x] Gateway 是唯一状态权威，状态迁移使用 expected `state_version` 和 CAS
+- [x] 终态包括 `REJECTED`、`COMPLETED`、`FAILED`、`CANCELLED` 和 `EXPIRED`，迟到事件不会重新打开 Task
+- [x] 每个 Task lease 校验 `worker_id`、`worker_epoch` 和 fencing token
+
+**Implementation:** `gateway_worker/canonical.py`, `gateway_worker/store.py`, and `gateway_worker/gateway.py` provide canonical authorization hashing, one-time confirmation, CAS state transitions, expiry/cancellation paths, audit events, and lease fencing. Contract coverage is in `tests/test_task_authorization.py`.
