@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "workbuddy-a2a"
+version = "0.1.0"
+description = "Gateway and Worker pairing PoC for cross-user WorkBuddy Agent collaboration"
+requires-python = ">=3.11"
+dependencies = [
+  "aiohttp>=3.9,<4",
+  "cryptography>=42,<50",
+]
+
+[project.scripts]
+workbuddy-gateway = "gateway_worker.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["gateway_worker*"]

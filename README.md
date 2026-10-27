@@ -16,3 +16,22 @@ Repository conventions are documented in [AGENTS.md](AGENTS.md), [domain guidanc
 ## Scope and readiness
 
 The current material describes a controlled demonstration. Real WorkBuddy accounts, real user data, and external side effects remain blocked until the five P0 security gates in [ADR 0010](docs/adr/0010-security-gates-before-real-accounts.md) are implemented and adversarially tested.
+
+## Local development
+
+Install the package and its runtime dependencies with `python3 -m pip install -e .`, then run the Gateway/Worker pairing contract suite:
+
+```sh
+python3 -m unittest -v tests.test_pairing
+```
+
+The bootstrap CLI creates the initial Team, User, and Agent. Generate a one-time pairing code with the returned IDs:
+
+```sh
+python3 -m gateway_worker.cli bootstrap --db gateway.db \
+  --team-name "Example Team" --user-name Alice --agent-name "Alice's Agent"
+python3 -m gateway_worker.cli pairing-code --db gateway.db \
+  --team-id TEAM_ID --agent-id AGENT_ID
+```
+
+The Gateway must be run with a TLS certificate and key for a WSS Worker connection. The Worker private key is held by the platform credential-store adapter; the Gateway persists only the public key and device state.
