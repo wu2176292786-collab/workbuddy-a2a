@@ -58,6 +58,8 @@ from .macos_adapter import (
 )
 from .clawbot import ClawBotAdapter, ClawBotIdentity, FakeClawBotTransport
 from .admin import AdminPrincipal, AdminService, redact
+from .monitoring import Alert, MonitoringCollector, MonitoringSnapshot
+from .backup import SQLiteBackupManager
 
 __all__ = [
     "Gateway",
@@ -115,4 +117,8 @@ __all__ = [
     "AdminPrincipal",
     "AdminService",
     "redact",
+    "Alert",
+    "MonitoringCollector",
+    "MonitoringSnapshot",
+    "SQLiteBackupManager",
 ]

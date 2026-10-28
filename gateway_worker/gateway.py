@@ -22,6 +22,7 @@ from .errors import (
 )
 from .admin import AdminService
 from .isolation import TaskTemplate
+from .monitoring import MonitoringCollector
 from .models import BootstrapResult, PairingCode, TaskRecord, WorkerRecord
 from .protocol import PROTOCOL_VERSION, b64url_decode, b64url_encode, signable, timestamp_is_fresh
 from .store import SQLiteStore
@@ -41,6 +42,7 @@ class Gateway:
     def __init__(self, store: SQLiteStore, *, heartbeat_timeout: float = 30.0) -> None:
         self.store = store
         self.admin = AdminService(store)
+        self.monitoring = MonitoringCollector()
         self.heartbeat_timeout = heartbeat_timeout
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
@@ -53,6 +55,8 @@ class Gateway:
         self._app.add_routes(
             [
                 web.get("/healthz", self._http_health),
+                web.get("/readyz", self._http_ready),
+                web.get("/metrics", self._http_metrics),
                 web.post("/v1/admin/bootstrap", self._http_bootstrap),
                 web.post("/v1/admin/pairing-codes", self._http_pairing_code),
                 web.post("/v1/admin/workers/{worker_id}/revoke", self._http_revoke),
@@ -319,7 +323,19 @@ class Gateway:
                         pass
 
     async def _http_health(self, _request: web.Request) -> web.Response:
-        return web.json_response({"status": "ok", "online_workers": len(self._sessions)})
+        health = self.monitoring.health()
+        health["online_workers"] = len(self._sessions)
+        return web.json_response(health)
+
+    async def _http_ready(self, _request: web.Request) -> web.Response:
+        try:
+            self.store.connection.execute("SELECT 1").fetchone()
+            return web.json_response({"status": "ready", "database": "ok"})
+        except Exception as error:
+            return web.json_response({"status": "not_ready", "database": "error", "message": str(error)}, status=503)
+
+    async def _http_metrics(self, _request: web.Request) -> web.Response:
+        return web.Response(text=self.monitoring.prometheus_text(), content_type="text/plain")
 
     async def _http_bootstrap(self, request: web.Request) -> web.Response:
         try:
@@ -460,6 +476,7 @@ class Gateway:
         finally:
             if session is not None and self._sessions.get(session.worker_id) is session:
                 self._sessions.pop(session.worker_id, None)
+                self.monitoring.worker_seen(session.worker_id, online=False)
         return socket
 
     async def _handle_pair(self, socket: web.WebSocketResponse, data: dict[str, Any]) -> None:
@@ -515,6 +532,7 @@ class Gateway:
         token = secrets.token_urlsafe(32)
         session = _Session(worker.id, token, socket, time.time())
         self._sessions[worker.id] = session
+        self.monitoring.worker_seen(worker.id, online=True)
         self.store.touch_worker(worker.id, worker.worker_epoch)
         await socket.send_json(
             {

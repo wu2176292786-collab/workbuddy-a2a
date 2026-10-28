@@ -56,6 +56,11 @@ console boundary with MFA/RBAC, Team-scoped member/Agent/Worker/template
 management, 30-day audit retention, short-lived task-content deletion,
 redacted export, and configurable resource limits.
 
+Deployment assets live under `deploy/`: Docker Compose services for Gateway,
+PostgreSQL, Redis, and an Nginx TLS/WSS reverse proxy, plus health/ready
+checks, Prometheus-compatible metrics, and checksum/integrity-checked backup
+scripts.
+
 The bootstrap CLI creates the initial Team, User, and Agent. Generate a one-time pairing code with the returned IDs:
 
 ```sh
