@@ -56,6 +56,7 @@ from .macos_adapter import (
     MacOSCompatibilityProfile,
     MacOSDesktopAdapter,
 )
+from .clawbot import ClawBotAdapter, ClawBotIdentity, FakeClawBotTransport
 
 __all__ = [
     "Gateway",
@@ -107,4 +108,7 @@ __all__ = [
     "MacOSCommandJournal",
     "MacOSCompatibilityProfile",
     "MacOSDesktopAdapter",
+    "ClawBotAdapter",
+    "ClawBotIdentity",
+    "FakeClawBotTransport",
 ]

@@ -46,6 +46,11 @@ The macOS counterpart is exposed by
 reconciliation, completion-evidence, safe-stop, and capability-gated
 clipboard contract over an Accessibility backend.
 
+`gateway_worker.clawbot.ClawBotAdapter` provides the confirmation and
+notification boundary: only strongly authenticated, machine-readable
+envelopes bound to the recipient Agent can confirm a Task, while replayed,
+forwarded, plain-text, expired, or mismatched messages are blocked.
+
 The bootstrap CLI creates the initial Team, User, and Agent. Generate a one-time pairing code with the returned IDs:
 
 ```sh

@@ -80,6 +80,26 @@ class EgressError(TaskError):
     code = "EGRESS_BLOCKED"
 
 
+class ChannelAuthenticationError(TaskError):
+    code = "CHANNEL_AUTHENTICATION_REQUIRED"
+
+
+class ConfirmationEnvelopeError(TaskError):
+    code = "CONFIRMATION_ENVELOPE_REJECTED"
+
+
+class ForwardedMessageError(ConfirmationEnvelopeError):
+    code = "FORWARDED_MESSAGE_REJECTED"
+
+
+class PlainTextConfirmationError(ConfirmationEnvelopeError):
+    code = "PLAINTEXT_CONFIRMATION_REJECTED"
+
+
+class ApprovalError(TaskError):
+    code = "RESULT_APPROVAL_REJECTED"
+
+
 class DesktopAdapterError(IsolationError):
     code = "DESKTOP_ADAPTER_ERROR"
 

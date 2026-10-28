@@ -559,6 +559,8 @@ class FakeCollaboration:
         if isinstance(raw_template, TaskTemplate):
             if self.template_registry is None:
                 self.template_registry = TemplateRegistry([raw_template])
+            kwargs.setdefault("template_id", raw_template.template_id)
+            kwargs.setdefault("template_version", raw_template.version)
             kwargs["template"] = {"id": raw_template.template_id, "version": raw_template.version}
         if self.template_registry is not None:
             template_id = kwargs.get("template_id")
@@ -598,6 +600,21 @@ class FakeCollaboration:
         if task is None:
             raise GatewayError("task does not exist")
         return task
+
+    def task_capabilities(self, task_id: str) -> dict[str, Any]:
+        """Return Worker-bound capabilities for an authenticated adapter.
+
+        ClawBot never receives these values; the adapter uses them only when it
+        has already authenticated the recipient channel and is calling the
+        Gateway on behalf of that recipient.
+        """
+        worker_id, worker_epoch, fencing_token, confirmation_nonce = self._credential(task_id)
+        return {
+            "worker_id": worker_id,
+            "worker_epoch": worker_epoch,
+            "fencing_token": fencing_token,
+            "confirmation_nonce": confirmation_nonce,
+        }
 
     def _credential(self, task_id: str) -> tuple[str, int, str, str]:
         try:
