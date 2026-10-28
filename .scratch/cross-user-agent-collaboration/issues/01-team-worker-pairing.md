@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** complete
 
 - [x] 能创建 Team、User 和 Agent，并把 Agent 加入 allowlist
 - [x] Worker 私钥只保存在操作系统凭据存储中，Gateway 只保存公钥和设备状态

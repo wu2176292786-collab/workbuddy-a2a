@@ -4,7 +4,7 @@
 
 **Blocked by:** 01: Team 与 Worker 配对。
 
-**Status:** ready-for-agent
+**Status:** complete
 
 - [x] Task template、scope、permission、expiry 和输入可规范化并生成稳定 `task_hash`
 - [x] 确认 envelope 绑定 `task_id`、`task_hash`、一次性 nonce、expiry 和认证接收方身份
