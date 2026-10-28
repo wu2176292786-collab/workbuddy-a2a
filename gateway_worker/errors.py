@@ -100,6 +100,18 @@ class ApprovalError(TaskError):
     code = "RESULT_APPROVAL_REJECTED"
 
 
+class AdminAuthorizationError(GatewayError):
+    code = "ADMIN_UNAUTHORIZED"
+
+
+class MFARequiredError(AdminAuthorizationError):
+    code = "MFA_REQUIRED"
+
+
+class ResourceLimitError(GatewayError):
+    code = "RESOURCE_LIMIT_EXCEEDED"
+
+
 class DesktopAdapterError(IsolationError):
     code = "DESKTOP_ADAPTER_ERROR"
 

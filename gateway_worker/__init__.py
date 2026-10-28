@@ -57,6 +57,7 @@ from .macos_adapter import (
     MacOSDesktopAdapter,
 )
 from .clawbot import ClawBotAdapter, ClawBotIdentity, FakeClawBotTransport
+from .admin import AdminPrincipal, AdminService, redact
 
 __all__ = [
     "Gateway",
@@ -111,4 +112,7 @@ __all__ = [
     "ClawBotAdapter",
     "ClawBotIdentity",
     "FakeClawBotTransport",
+    "AdminPrincipal",
+    "AdminService",
+    "redact",
 ]

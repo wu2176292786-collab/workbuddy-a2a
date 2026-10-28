@@ -51,6 +51,11 @@ notification boundary: only strongly authenticated, machine-readable
 envelopes bound to the recipient Agent can confirm a Task, while replayed,
 forwarded, plain-text, expired, or mismatched messages are blocked.
 
+`gateway_worker.admin.AdminService` provides the controlled-demo Admin
+console boundary with MFA/RBAC, Team-scoped member/Agent/Worker/template
+management, 30-day audit retention, short-lived task-content deletion,
+redacted export, and configurable resource limits.
+
 The bootstrap CLI creates the initial Team, User, and Agent. Generate a one-time pairing code with the returned IDs:
 
 ```sh

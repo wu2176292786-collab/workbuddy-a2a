@@ -20,6 +20,8 @@ from .errors import (
     WorkerNotFound,
     WorkerRevoked,
 )
+from .admin import AdminService
+from .isolation import TaskTemplate
 from .models import BootstrapResult, PairingCode, TaskRecord, WorkerRecord
 from .protocol import PROTOCOL_VERSION, b64url_decode, b64url_encode, signable, timestamp_is_fresh
 from .store import SQLiteStore
@@ -38,6 +40,7 @@ class Gateway:
 
     def __init__(self, store: SQLiteStore, *, heartbeat_timeout: float = 30.0) -> None:
         self.store = store
+        self.admin = AdminService(store)
         self.heartbeat_timeout = heartbeat_timeout
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
@@ -53,6 +56,10 @@ class Gateway:
                 web.post("/v1/admin/bootstrap", self._http_bootstrap),
                 web.post("/v1/admin/pairing-codes", self._http_pairing_code),
                 web.post("/v1/admin/workers/{worker_id}/revoke", self._http_revoke),
+                web.get("/v1/admin/audit", self._http_admin_audit),
+                web.post("/v1/admin/templates", self._http_admin_template),
+                web.post("/v1/admin/tasks/{task_id}/export", self._http_admin_export),
+                web.delete("/v1/admin/tasks/{task_id}/content", self._http_admin_delete_content),
                 web.post("/v1/tasks", self._http_task),
                 web.get("/v1/worker/ws", self._worker_socket),
             ]
@@ -355,6 +362,46 @@ class Gateway:
             return web.json_response({"worker_id": record.id, "status": record.status})
         except WorkerNotFound as error:
             return web.json_response({"error": error.code, "message": str(error)}, status=404)
+
+    def _http_admin_principal(self, request: web.Request):
+        return self.admin.authenticate(
+            request.headers["X-Admin-Id"],
+            request.headers["X-Team-Id"],
+            role=request.headers.get("X-Admin-Role", "viewer"),
+            mfa_code=request.headers["X-MFA-Code"],
+        )
+
+    async def _http_admin_audit(self, request: web.Request) -> web.Response:
+        try:
+            principal = self._http_admin_principal(request)
+            events = self.admin.audit_events(principal, limit=int(request.query.get("limit", "100")), action=request.query.get("action"))
+            return web.json_response({"events": events})
+        except (KeyError, GatewayError, ValueError) as error:
+            return web.json_response({"error": getattr(error, "code", "INVALID_REQUEST"), "message": str(error)}, status=403)
+
+    async def _http_admin_template(self, request: web.Request) -> web.Response:
+        try:
+            principal = self._http_admin_principal(request)
+            template = TaskTemplate.from_dict(await request.json())
+            saved = self.admin.publish_template(principal, template)
+            return web.json_response(saved.as_dict(), status=201)
+        except (KeyError, GatewayError, ValueError) as error:
+            return web.json_response({"error": getattr(error, "code", "INVALID_REQUEST"), "message": str(error)}, status=403)
+
+    async def _http_admin_export(self, request: web.Request) -> web.Response:
+        try:
+            principal = self._http_admin_principal(request)
+            return web.json_response(self.admin.export_task(principal, request.match_info["task_id"]))
+        except (KeyError, GatewayError, ValueError) as error:
+            return web.json_response({"error": getattr(error, "code", "INVALID_REQUEST"), "message": str(error)}, status=403)
+
+    async def _http_admin_delete_content(self, request: web.Request) -> web.Response:
+        try:
+            principal = self._http_admin_principal(request)
+            self.admin.delete_task_content(principal, request.match_info["task_id"])
+            return web.json_response({"status": "deleted"})
+        except (KeyError, GatewayError, ValueError) as error:
+            return web.json_response({"error": getattr(error, "code", "INVALID_REQUEST"), "message": str(error)}, status=403)
 
     async def _http_task(self, request: web.Request) -> web.Response:
         try:
